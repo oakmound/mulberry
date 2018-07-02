@@ -131,7 +131,6 @@ func (v *View) followMouse(id int, pos interface{}) int {
 func trackMouse(id int, pos interface{}) int {
 	v := event.GetEntity(id).(*View)
 	me := pos.(mouse.Event)
-	fmt.Println("trackMouse", me)
 	diff := me.Sub(v.mouseOffset)
 	if v.X() != diff.X() || v.Y() != diff.Y() {
 		v.SetPos(diff.X(), diff.Y())
@@ -235,6 +234,7 @@ func (v *View) DrawOffset(buff draw.Image, xOff, yOff float64) {
 		endByte := v.linePositions[endLine]
 		byteCt := endByte - startByte
 
+		// Todo: seek current is likely more efficient
 		v.buff.Seek(startByte, io.SeekStart)
 		content := make([]byte, byteCt)
 		n, _ := io.ReadFull(v.buff, content)
@@ -273,7 +273,6 @@ func (v *View) DrawOffset(buff draw.Image, xOff, yOff float64) {
 		v.Sprite.SetRGBA(newRgba)
 		v.lastStartByte = startByte
 		v.dirty = false
-		v.buff.Seek(0, io.SeekStart)
 	}
 	v.Sprite.DrawOffset(buff, xOff, yOff)
 }
