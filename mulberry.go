@@ -7,8 +7,12 @@ import (
 	"io"
 	"os"
 
+	"github.com/oakmound/oak/alg/floatgeom"
+	"github.com/oakmound/oak/collision"
+
 	"github.com/oakmound/oak/event"
 	"github.com/oakmound/oak/key"
+	"github.com/oakmound/oak/mouse"
 
 	"github.com/oakmound/oak/render"
 	"github.com/pkg/errors"
@@ -19,6 +23,7 @@ type View struct {
 	cid int
 
 	*render.Sprite
+	space    *collision.Space
 	buff     io.ReadWriteSeeker
 	row, col int64
 	// Todo: cursor that will advance col by the width
@@ -29,6 +34,7 @@ type View struct {
 	// x and y are just used during initialization.
 	x, y          float64
 	width, height int
+	mouseOffset   floatgeom.Point2
 
 	lastStartByte int64
 
@@ -44,9 +50,10 @@ type View struct {
 	bus  *event.Bus
 	font *render.Font
 
-	wordWrap    bool
-	lineNumbers bool
-	dirty       bool
+	wordWrap       bool
+	lineNumbers    bool
+	dirty          bool
+	followingMouse bool
 }
 
 func defaultView() *View {
@@ -79,8 +86,11 @@ func New(r io.ReadWriteSeeker, opts ...Option) (*View, error) {
 	for _, o := range opts {
 		o(v)
 	}
+	v.Init()
 	v.buff = r
 	v.Sprite = render.NewEmptySprite(v.x, v.y, v.width, v.height)
+	v.space = collision.NewSpace(v.x, v.y, float64(v.width), float64(v.height), event.CID(v.cid))
+	mouse.Add(v.space)
 	v.addBindings()
 	err := v.precalculateLines()
 	return v, err
@@ -102,6 +112,52 @@ func (v *View) addBindings() {
 	v.bus.Bind(v.moveVert(1), key.Held+key.DownArrow, v.cid)
 	v.bus.Bind(v.moveHorz(-1), key.Held+key.LeftArrow, v.cid)
 	v.bus.Bind(v.moveHorz(1), key.Held+key.RightArrow, v.cid)
+
+	v.bus.Bind(v.followMouse, mouse.PressOn, v.cid)
+	v.bus.Bind(v.releaseMouse, mouse.Release, v.cid)
+}
+
+func (v *View) followMouse(id int, pos interface{}) int {
+	me := pos.(mouse.Event)
+	v.followingMouse = true
+	v.mouseOffset = floatgeom.Point2{
+		me.X() - v.X(),
+		me.Y() - v.Y(),
+	}
+	v.bus.Bind(trackMouse, mouse.Drag, v.cid)
+	return 0
+}
+
+func trackMouse(id int, pos interface{}) int {
+	v := event.GetEntity(id).(*View)
+	me := pos.(mouse.Event)
+	fmt.Println("trackMouse", me)
+	diff := me.Sub(v.mouseOffset)
+	if v.X() != diff.X() || v.Y() != diff.Y() {
+		v.SetPos(diff.X(), diff.Y())
+		mouse.UpdateSpace(diff.X(), diff.Y(), float64(v.width), float64(v.height), v.space)
+		v.dirty = true
+	}
+	return 0
+}
+
+func (v *View) releaseMouse(id int, _ interface{}) int {
+	if v.followingMouse {
+		v.bus.UnbindBindable(
+			event.UnbindOption{
+				BindingOption: event.BindingOption{
+					Event: event.Event{
+						Name:     mouse.Drag,
+						CallerID: v.cid,
+					},
+					Priority: 0,
+				},
+				Fn: trackMouse,
+			},
+		)
+		v.followingMouse = false
+	}
+	return 0
 }
 
 func (v *View) precalculateLines() error {
