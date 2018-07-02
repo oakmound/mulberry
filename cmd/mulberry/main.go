@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/oakmound/mulberry"
 	"github.com/oakmound/oak"
 	"github.com/oakmound/oak/render"
 	"github.com/oakmound/oak/scene"
